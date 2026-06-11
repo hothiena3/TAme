@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MyDictation Pro</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div class="max-w-5xl mx-auto p-6">
+<h1 class="text-4xl font-bold text-indigo-700 text-center">MyDictation Pro</h1>
+
+<div class="bg-white p-4 rounded-xl mt-4">
+<input id="videoUrl" class="w-full border p-3 rounded" placeholder="Youtube URL">
+<div class="flex gap-2 mt-3">
+<button onclick="loadVideo()" class="bg-indigo-600 text-white px-4 py-2 rounded">Load Video</button>
+<button onclick="manualTranscript()" class="bg-gray-600 text-white px-4 py-2 rounded">Manual Transcript</button>
+<button onclick="showHint()" class="bg-purple-600 text-white px-4 py-2 rounded">Hint</button>
+</div>
+</div>
+
+<div id="playerContainer" class="hidden mt-4 aspect-video"></div>
+
+<div id="exerciseArea" class="hidden bg-white p-4 rounded-xl mt-4">
+<div class="flex justify-between">
+<span id="sentenceNumber"></span>
+<div>
+<button onclick="prevSentence()">Prev</button>
+<button onclick="nextSentence()">Next</button>
+</div>
+</div>
+
+<textarea id="userInput" class="w-full border p-3 mt-3 rounded" rows="4"></textarea>
+
+<div class="flex gap-2 mt-3">
+<button onclick="checkAnswer()" class="bg-green-600 text-white px-4 py-2 rounded">Check</button>
+<button onclick="showAnswer()" class="bg-yellow-600 text-white px-4 py-2 rounded">Answer</button>
+<button onclick="replayCurrent()" class="bg-gray-700 text-white px-4 py-2 rounded">Replay</button>
+</div>
+
+<div id="feedback" class="mt-4"></div>
+
+<div id="answerArea" class="hidden mt-4 p-4 bg-yellow-50 rounded">
+<div id="originalText"></div>
+<textarea id="vietTranslation" class="w-full border p-2 mt-2"></textarea>
+<button onclick="saveTranslation()" class="mt-2 bg-indigo-600 text-white px-3 py-2 rounded">Save Translation</button>
+</div>
+
+<div class="mt-4 p-4 bg-slate-50 rounded">
+<h3 class="font-bold">Dashboard</h3>
+<div id="dashboard"></div>
+<button onclick="exportVocabulary()" class="mt-2 bg-blue-600 text-white px-3 py-2 rounded">Export Vocabulary CSV</button>
+</div>
+</div>
+</div>
+
+<script>
+let player,videoId,currentIndex=0,currentVideoKey='';
+let sentences=[];
+let stats={totalAttempts:0,correctAnswers:0,mistakes:{}};
+
+function extractVideoId(url){
+ const m=url.match(/(?:v=|youtu\.be\/)([\w-]{11})/);
+ return m?m[1]:null;
+}
+
+function loadVideo(){
+ const url=document.getElementById('videoUrl').value.trim();
+ videoId=extractVideoId(url);
+ if(!videoId){alert('Invalid URL');return;}
+ currentVideoKey='dictation_'+videoId;
+
+ document.getElementById('playerContainer').classList.remove('hidden');
+ document.getElementById('exerciseArea').classList.remove('hidden');
+
+ if(player) player.destroy();
+
+ player=new YT.Player('playerContainer',{
+  videoId:videoId,
+  events:{onReady:()=>{}}
+ });
+
+ loadDemoTranscript();
+ loadProgress();
+}
+
+function loadDemoTranscript(){
+ sentences=[
+ {text:"Hello everyone. Today I want to talk about something very important.",time:7},
+ {text:"We are going to talk about how to practice English talking.",time:14},
+ {text:"Many people study English for years.",time:26}
+ ];
+ showCurrentSentence();
+}
+
+function manualTranscript(){
+ const input=prompt("One sentence per line");
+ if(!input) return;
+ sentences=input.split("\n").filter(Boolean).map((t,i)=>({text:t.trim(),time:i*5}));
+ currentIndex=0;
+ showCurrentSentence();
+}
+
+function showCurrentSentence(){
+ document.getElementById('sentenceNumber').innerText=`Sentence ${currentIndex+1}/${sentences.length}`;
+ document.getElementById('userInput').value='';
+ document.getElementById('feedback').innerHTML='';
+ updateDashboard();
+ saveProgress();
+}
+
+function normalizeText(t){
+ return t.toLowerCase().replace(/[^\w\s]/g,'').trim();
+}
+
+function collectVocabularyMistakes(userWords,correctWords){
+ correctWords.forEach(w=>{
+  if(!userWords.includes(w)){
+   stats.mistakes[w]=(stats.mistakes[w]||0)+1;
+  }
+ });
+}
+
+function checkAnswer(){
+ const user=normalizeText(document.getElementById('userInput').value);
+ const correct=normalizeText(sentences[currentIndex].text);
+
+ const uw=user.split(' ');
+ const cw=correct.split(' ');
+
+ let matched=0;
+ cw.forEach(w=>{if(uw.includes(w)) matched++;});
+
+ const accuracy=Math.round((matched/cw.length)*100);
+
+ stats.totalAttempts++;
+ if(accuracy>=90) stats.correctAnswers++;
+
+ collectVocabularyMistakes(uw,cw);
+
+ document.getElementById('feedback').innerHTML=`Accuracy: ${accuracy}%`;
+ updateDashboard();
+ saveProgress();
+}
+
+function showAnswer(){
+ document.getElementById('answerArea').classList.remove('hidden');
+ document.getElementById('originalText').innerText=sentences[currentIndex].text;
+ document.getElementById('vietTranslation').value=localStorage.getItem(currentVideoKey+'_trans_'+currentIndex)||'';
+}
+
+function saveTranslation(){
+ localStorage.setItem(currentVideoKey+'_trans_'+currentIndex,document.getElementById('vietTranslation').value);
+}
+
+function showHint(){
+ const words=sentences[currentIndex].text.split(' ');
+ alert(words.map((w,i)=>i%2===0?w:'_____').join(' '));
+}
+
+function replayCurrent(){
+ if(player && sentences[currentIndex]){
+  player.seekTo(sentences[currentIndex].time||0);
+  player.playVideo();
+ }
+}
+
+function nextSentence(){if(currentIndex<sentences.length-1){currentIndex++;showCurrentSentence();}}
+function prevSentence(){if(currentIndex>0){currentIndex--;showCurrentSentence();}}
+
+function updateDashboard(){
+ const acc=stats.totalAttempts?Math.round(stats.correctAnswers/stats.totalAttempts*100):0;
+ document.getElementById('dashboard').innerHTML=
+ `Accuracy: ${acc}%<br>Attempts: ${stats.totalAttempts}<br>Vocabulary: ${Object.keys(stats.mistakes).length}`;
+}
+
+function exportVocabulary(){
+ let csv="Word,Count\n";
+ Object.entries(stats.mistakes).forEach(([w,c])=>csv+=`${w},${c}\n`);
+ const blob=new Blob([csv],{type:'text/csv'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download='vocabulary.csv';
+ a.click();
+}
+
+function saveProgress(){
+ localStorage.setItem(currentVideoKey+'_progress',JSON.stringify({currentIndex,stats}));
+}
+
+function loadProgress(){
+ const d=localStorage.getItem(currentVideoKey+'_progress');
+ if(!d) return;
+ const obj=JSON.parse(d);
+ if(confirm('Resume previous session?')){
+  currentIndex=obj.currentIndex||0;
+  stats=obj.stats||stats;
+  showCurrentSentence();
+ }
+}
+</script>
+</body>
+</html>
