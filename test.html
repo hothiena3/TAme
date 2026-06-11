@@ -1,0 +1,312 @@
+```html
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DictationLab Lite</title>
+
+<style>
+body{
+    font-family: Arial,sans-serif;
+    background:#111;
+    color:#fff;
+    max-width:1000px;
+    margin:auto;
+    padding:20px;
+}
+input,textarea,button{
+    width:100%;
+    padding:10px;
+    margin:5px 0;
+}
+.card{
+    background:#1e1e1e;
+    padding:15px;
+    border-radius:10px;
+    margin-top:10px;
+}
+.good{color:#4caf50;}
+.bad{color:#ff5252;}
+</style>
+</head>
+<body>
+
+<h1>DictationLab Lite</h1>
+
+<div class="card">
+<h3>YouTube URL</h3>
+<input id="youtubeUrl" placeholder="https://youtube.com/watch?v=xxxx">
+
+<button onclick="loadTranscript()">
+Load Transcript
+</button>
+</div>
+
+<div class="card">
+<h3>Transcript</h3>
+<textarea id="transcript" rows="10"></textarea>
+</div>
+
+<div class="card">
+<h3>Sentence</h3>
+<div id="sentenceArea">
+Chưa có dữ liệu
+</div>
+
+<button onclick="showHint()">
+Hint
+</button>
+
+<button onclick="showAnswer()">
+Show Answer
+</button>
+
+<input id="answer" placeholder="Type what you hear">
+
+<button onclick="checkAnswer()">
+Check
+</button>
+
+<div id="result"></div>
+
+<button onclick="prevSentence()">
+Previous
+</button>
+
+<button onclick="nextSentence()">
+Next
+</button>
+</div>
+
+<div class="card">
+<h3>Progress</h3>
+<div id="progress"></div>
+</div>
+
+<script>
+
+let sentences=[];
+let currentIndex=0;
+
+function getYoutubeId(url){
+    try{
+        let u=new URL(url);
+        return u.searchParams.get("v");
+    }catch{
+        return null;
+    }
+}
+
+async function loadTranscript(){
+
+    const url=document.getElementById("youtubeUrl").value;
+    const videoId=getYoutubeId(url);
+
+    if(!videoId){
+        alert("Invalid URL");
+        return;
+    }
+
+    try{
+
+        // Demo endpoint
+        const api=
+        `https://youtubetranscript.p.rapidapi.com/?video_id=${videoId}`;
+
+        alert(
+        "Do giới hạn CORS của YouTube, bạn cần thay endpoint transcript bằng dịch vụ/API bạn chọn."
+        );
+
+    }catch(err){
+        console.error(err);
+    }
+}
+
+function parseTranscript(){
+
+    const text=
+    document.getElementById("transcript").value;
+
+    sentences=text
+        .split(/\n+/)
+        .map(x=>x.trim())
+        .filter(Boolean);
+
+    currentIndex=0;
+
+    saveProgress();
+
+    renderSentence();
+}
+
+document
+.getElementById("transcript")
+.addEventListener("change",parseTranscript);
+
+function renderSentence(){
+
+    if(sentences.length===0){
+        document.getElementById("sentenceArea").innerText=
+        "No transcript";
+        return;
+    }
+
+    document.getElementById("sentenceArea").innerText=
+    `Sentence ${currentIndex+1}/${sentences.length}`;
+
+    document.getElementById("answer").value="";
+
+    updateProgress();
+}
+
+function normalize(text){
+    return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g,"")
+    .trim();
+}
+
+function checkAnswer(){
+
+    const user=
+    normalize(
+    document.getElementById("answer").value
+    );
+
+    const target=
+    normalize(sentences[currentIndex]);
+
+    let score=
+    user===target ? 100 : Math.round(
+    similarity(user,target)*100
+    );
+
+    document.getElementById("result").innerHTML=
+    score>=80
+    ? `<span class="good">Accuracy ${score}%</span>`
+    : `<span class="bad">Accuracy ${score}%</span>`;
+}
+
+function similarity(a,b){
+
+    let longer=a.length>b.length?a:b;
+    let shorter=a.length>b.length?b:a;
+
+    if(longer.length===0) return 1;
+
+    return (
+    longer.length-
+    editDistance(longer,shorter)
+    )/longer.length;
+}
+
+function editDistance(a,b){
+
+    const matrix=[];
+
+    for(let i=0;i<=b.length;i++){
+        matrix[i]=[i];
+    }
+
+    for(let j=0;j<=a.length;j++){
+        matrix[0][j]=j;
+    }
+
+    for(let i=1;i<=b.length;i++){
+
+        for(let j=1;j<=a.length;j++){
+
+            if(b.charAt(i-1)==a.charAt(j-1)){
+                matrix[i][j]=matrix[i-1][j-1];
+            }else{
+                matrix[i][j]=Math.min(
+                    matrix[i-1][j-1]+1,
+                    matrix[i][j-1]+1,
+                    matrix[i-1][j]+1
+                );
+            }
+        }
+    }
+
+    return matrix[b.length][a.length];
+}
+
+function showHint(){
+
+    const s=sentences[currentIndex];
+
+    const words=s.split(" ");
+
+    let hint=
+    words.map((w,i)=>
+    i%2===0 ? w : "_____"
+    ).join(" ");
+
+    alert(hint);
+}
+
+function showAnswer(){
+    alert(sentences[currentIndex]);
+}
+
+function nextSentence(){
+
+    if(currentIndex<sentences.length-1){
+        currentIndex++;
+        saveProgress();
+        renderSentence();
+    }
+}
+
+function prevSentence(){
+
+    if(currentIndex>0){
+        currentIndex--;
+        saveProgress();
+        renderSentence();
+    }
+}
+
+function saveProgress(){
+
+    localStorage.setItem(
+        "dictationlab-progress",
+        JSON.stringify({
+            currentIndex,
+            sentences
+        })
+    );
+}
+
+function loadProgress(){
+
+    const data=
+    localStorage.getItem(
+        "dictationlab-progress"
+    );
+
+    if(!data) return;
+
+    const obj=JSON.parse(data);
+
+    currentIndex=obj.currentIndex||0;
+    sentences=obj.sentences||[];
+
+    renderSentence();
+}
+
+function updateProgress(){
+
+    document.getElementById("progress")
+    .innerHTML=
+    `${currentIndex+1}/${sentences.length}`;
+}
+
+loadProgress();
+
+</script>
+
+</body>
+</html>
+```
